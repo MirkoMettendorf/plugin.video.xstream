@@ -3,6 +3,8 @@
 # Always pay attention to the translations in the menu!
 # Sprachauswahl für Hoster enthalten.
 # Ajax Suchfunktion enthalten.
+import pathlib
+import shelve
 
 import xbmcgui
 import time
@@ -335,6 +337,112 @@ def SSsearch(sGui=False, sSearchText=False):
         if not sGui:
             oGui.setView('tvshows')
 
+def imdbSearch(sGui=False, searchTitle=False, searchImdbId=False):
+    oGui = sGui if sGui else cGui()
+    params = ParameterHandler()
+    # searchTitle = params.getValue('searchTitle')
+    # searchImdbId = params.getValue('searchImdbID')
+    # searchYear = params.getValue('searchYear')
+
+    filepath = pathlib.PurePath(__file__).parent.parent / "aniworld_dict.db"
+    filepath2 = pathlib.PurePath(__file__).parent.parent / "aniworld_dict2.db"
+    imdbDict = shelve.open(str(filepath))
+    imdbDictId = shelve.open(str(filepath2))
+
+    title = imdbDictId.get(searchImdbId)
+
+    # id ist in dictionary, nur auslesen
+    if  title:
+        id, link = imdbDict[title]
+        sThumbnail, sDescription, simdb = getMetaInfoId(link, title)
+        oGuiElement = cGuiElement(title, SITE_IDENTIFIER, 'showSeasons')
+        oGuiElement.setThumbnail(sThumbnail)
+        oGuiElement.setDescription(sDescription)
+        oGuiElement.setMediaType('tvshow')
+        params.setParam('sUrl', URL_MAIN + link)
+        params.setParam('sName', title)
+        oGui.addFolder(oGuiElement, params, True, 1)
+
+        if not sGui:
+            oGui.setView('tvshows')
+        imdbDict.close()
+        return True
+    # id ist nicht in dictionary, durchsuche alle s.to serien
+    else:
+        oRequest = cRequestHandler(URL_SERIES, caching=True, ignoreErrors=(sGui is not False))
+        oRequest.addHeaderEntry('X-Requested-With', 'XMLHttpRequest')
+        oRequest.addHeaderEntry('Referer', 'https://aniworld.to/animes')
+        oRequest.addHeaderEntry('Origin', 'https://aniworld.to')
+        oRequest.addHeaderEntry('Content-Type', 'application/x-www-form-urlencoded; charset=UTF-8')
+        oRequest.addHeaderEntry('Upgrade-Insecure-Requests', '1')
+
+        sHtmlContent = oRequest.request()
+        if not sHtmlContent:
+            return
+
+
+        pattern = '<li><a data.+?href="([^"]+)".+?">(.*?)\<\/a><\/l' #link - title
+
+        oParser = cParser()
+        aResult = oParser.parse(sHtmlContent, pattern)
+
+        noId=True
+
+        if not aResult[0]:
+            oGui.showInfo()
+            return
+        for link, title in aResult[1]:
+            # überspringe alle Serien, die bereits einen Dict Eintrag haben
+            if title in imdbDict:
+                continue
+            sThumbnail, sDescription, sImdb = getMetaInfoId(link, title)
+
+            # neue Serie zu Dict hinzufügen
+            imdbDict[title] = [sImdb, link]
+            imdbDictId[sImdb] =title
+            # Id entspricht SuchId, dann aufrufen
+            if searchImdbId in sImdb:
+                oGuiElement = cGuiElement(title, SITE_IDENTIFIER, 'showSeasons')
+                oGuiElement.setThumbnail(sThumbnail)
+                oGuiElement.setDescription(sDescription)
+                oGuiElement.setMediaType('tvshow')
+                params.setParam('sUrl', URL_MAIN + link)
+                params.setParam('sName', title)
+                oGui.addFolder(oGuiElement, params, True, 1)
+
+                if not sGui:
+                    oGui.setView('tvshows')
+                imdbDict.close()
+                noId=False
+                return True
+        if noId:
+            total = len(aResult[1])
+            noResult=True
+            length =len(searchTitle)
+            # wenn kein Ergebnis suche mit einem Buchstaben weniger
+            while noResult and length != 0:
+                for link, title in aResult[1]:
+                    if searchTitle.lower()[0:length] not in title.lower():
+                        continue
+                    else:
+                        id,link = imdbDict.get(title)
+                        # nur die ohne id anzeigen
+                        if not id or id =="None":
+                            noResult = False
+                            # get images thumb / descr pro call. (optional)
+                            sThumbnail, sDescription,sId = getMetaInfoId(link, title)
+                            oGuiElement = cGuiElement(title+"," +sId, SITE_IDENTIFIER, 'showSeasons')
+                            oGuiElement.setThumbnail(sThumbnail)
+                            oGuiElement.setDescription(sDescription)
+                            oGuiElement.setMediaType('tvshow')
+                            params.setParam('sUrl', URL_MAIN + link)
+                            params.setParam('sName', title)
+                            oGui.addFolder(oGuiElement, params, True, total)
+                            if not sGui:
+                                oGui.setView('tvshows')
+                            return True
+                length=length-1
+
 
 def getMetaInfo(link, title):   # Setzen von Metadata in Suche:
     oGui = cGui()
@@ -359,3 +467,28 @@ def getMetaInfo(link, title):   # Setzen von Metadata in Suche:
 
     for sImg, sDescr in aResult[1]:
         return sImg, sDescr
+
+def getMetaInfoId(link, title):   # Setzen von Metadata in Suche:
+    oGui = cGui()
+    oRequest = cRequestHandler(URL_MAIN + link, caching=False)
+    oRequest.addHeaderEntry('X-Requested-With', 'XMLHttpRequest')
+    oRequest.addHeaderEntry('Referer', 'https://aniworld.to/animes')
+    oRequest.addHeaderEntry('Origin', 'https://aniworld.to')
+
+    #GET CONTENT OF HTML
+    sHtmlContent = oRequest.request()
+    if not sHtmlContent:
+        return
+
+    pattern = 'seriesCoverBox">.*?<img src="([^"]+)"\ al.+?data-full-description="([^"]+)"' #img , descr
+    oParser = cParser()
+    aResult = oParser.parse(sHtmlContent, pattern)
+    imdbPattern = '<a[^>]*data-imdb="(.*?)"[^>]*>'  # imdbId
+    isImdb, sImdb = oParser.parseSingleResult(sHtmlContent, imdbPattern)
+    if not aResult[0]:
+        oGui.showInfo()
+        return
+    for sImg, sDescr in aResult[1]:
+        if isImdb:
+            return sImg, sDescr, sImdb
+        return sImg, sDescr, "None"

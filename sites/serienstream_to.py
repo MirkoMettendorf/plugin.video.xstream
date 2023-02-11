@@ -152,7 +152,7 @@ def showEntries(entryUrl=False, sGui=False):
 
     total = len(aResult)
     for sUrl, sThumbnail, sName in aResult:
-        #sThumbnail = URL_MAIN + sThumbnail
+        # sThumbnail = URL_MAIN + sThumbnail
         oGuiElement = cGuiElement(sName, SITE_IDENTIFIER, 'showSeasons')
         oGuiElement.setThumbnail(sThumbnail)
         oGuiElement.setMediaType('tvshow')
@@ -343,11 +343,11 @@ def SSsearch(sGui=False, sSearchText=False):
 
     sHtmlContent = oRequest.request()
     if not sHtmlContent:
-            return
+        return
 
     sst = sSearchText.lower()
 
-    pattern = '<li><a data.+?href="([^"]+)".+?">(.*?)\<\/a><\/l' #link - title
+    pattern = '<li><a data.+?href="([^"]+)".+?">(.*?)\<\/a><\/l'  # link - title
 
     oParser = cParser()
     aResult = oParser.parse(sHtmlContent, pattern)
@@ -358,10 +358,10 @@ def SSsearch(sGui=False, sSearchText=False):
 
     total = len(aResult[1])
     for link, title in aResult[1]:
-        if not sst in title.lower():
+        if sst not in title.lower():
             continue
         else:
-            #get images thumb / descr pro call. (optional)
+            # get images thumb / descr pro call. (optional)
             sThumbnail, sDescription = getMetaInfo(link, title)
             oGuiElement = cGuiElement(title, SITE_IDENTIFIER, 'showSeasons')
             oGuiElement.setThumbnail(sThumbnail)
@@ -374,7 +374,132 @@ def SSsearch(sGui=False, sSearchText=False):
             oGui.setView('tvshows')
 
 
+def imdbSearch(sGui=False, searchTitle=False, searchImdbId=False):
+    oGui = sGui if sGui else cGui()
+    params = ParameterHandler()
+    # searchTitle = params.getValue('searchTitle')
+    # searchImdbId = params.getValue('searchImdbID')
+    # searchYear = params.getValue('searchYear')
+
+    filepath = pathlib.PurePath(__file__).parent.parent / "serienstream_dict.db"
+    filepath2 = pathlib.PurePath(__file__).parent.parent / "serienstream_dict2.db"
+    imdbDict = shelve.open(str(filepath))
+    imdbDictId = shelve.open(str(filepath2))
+
+    title = imdbDictId.get(searchImdbId)
+
+    # id ist in dictionary, nur auslesen
+    if  title:
+        id, link = imdbDict[title]
+        sThumbnail, sDescription, simdb = getMetaInfoId(link, title)
+        oGuiElement = cGuiElement(title, SITE_IDENTIFIER, 'showSeasons')
+        oGuiElement.setThumbnail(sThumbnail)
+        oGuiElement.setDescription(sDescription)
+        oGuiElement.setMediaType('tvshow')
+        params.setParam('sUrl', URL_MAIN + link)
+        params.setParam('sName', title)
+        oGui.addFolder(oGuiElement, params, True, 1)
+
+        if not sGui:
+            oGui.setView('tvshows')
+        imdbDict.close()
+    # id ist nicht in dictionary, durchsuche alle s.to serien
+    else:
+        oRequest = cRequestHandler(URL_SERIES, caching=True, ignoreErrors=(sGui is not False))
+        oRequest.addHeaderEntry('X-Requested-With', 'XMLHttpRequest')
+        oRequest.addHeaderEntry('Referer', 'https://s.to/serien')
+        oRequest.addHeaderEntry('Origin', 'https://s.to')
+        oRequest.addHeaderEntry('Content-Type', 'application/x-www-form-urlencoded; charset=UTF-8')
+        oRequest.addHeaderEntry('Upgrade-Insecure-Requests', '1')
+
+        sHtmlContent = oRequest.request()
+        if not sHtmlContent:
+            return
+
+        genrePattern = 'seriesGenreList"><h3>(.*?)\<\/h3><\/div>.+?<ul>(.*?)\<\/ul>'
+
+        pattern = '<li><a data.+?href="([^"]+)".+?">(.*?)\<\/a><\/l'  # link - title
+
+        oParser = cParser()
+        sHtmlContentGenre=""
+        isResult, genreResult = oParser.parse(sHtmlContent, genrePattern)
+        if isResult:
+            for genre, genreHtml in genreResult:
+                if genre == "Anime":
+                    continue
+                sHtmlContentGenre+=genreHtml
+
+            aResult = oParser.parse(sHtmlContentGenre, pattern)
+
+            noId=True
+
+            if not aResult[0]:
+                oGui.showInfo()
+                return
+            for link, title in aResult[1]:
+                #logger.info("title: " + title)
+                # überspringe alle Serien, die bereits einen Dict Eintrag haben
+                if title in imdbDict:
+                    continue
+                sThumbnail, sDescription, sImdb = getMetaInfoId(link, title)
+
+                # neue Serie zu Dict hinzufügen
+                imdbDict[title] = [sImdb, link]
+                imdbDictId[sImdb] =title
+                #logger.info("new entry: " + title + ", " + sImdb)
+                # Id entspricht SuchId, dann aufrufen
+                if searchImdbId in sImdb:
+                    oGuiElement = cGuiElement(title, SITE_IDENTIFIER, 'showSeasons')
+                    oGuiElement.setThumbnail(sThumbnail)
+                    oGuiElement.setDescription(sDescription)
+                    oGuiElement.setMediaType('tvshow')
+                    params.setParam('sUrl', URL_MAIN + link)
+                    params.setParam('sName', title)
+                    oGui.addFolder(oGuiElement, params, True, 1)
+
+                    if not sGui:
+                        oGui.setView('tvshows')
+                    imdbDict.close()
+                    noId=False
+                    break
+            if noId:
+                # search in aniworld
+                plugin = __import__("aniworld", globals(), locals())
+                function = getattr(plugin, "imdbSearch")
+                results =function(oGui, searchTitle, searchImdbId)
+                if not results:
+                    logger.info("no ID found, normal titel search")
+                    total = len(aResult[1])
+                    noResult=True
+                    length =len(searchTitle)
+                    # wenn kein Ergebnis suche mit einem Buchstaben weniger
+                    while noResult and length != 0:
+                        for link, title in aResult[1]:
+                            if searchTitle.lower()[0:length] not in title.lower():
+                                continue
+                            else:
+                                id,link = imdbDict.get(title)
+                                # nur die ohne id anzeigen
+                                if not id or id =="None":
+                                    noResult = False
+                                    # get images thumb / descr pro call. (optional)
+                                    sThumbnail, sDescription,sId = getMetaInfoId(link, title)
+                                    oGuiElement = cGuiElement(title, SITE_IDENTIFIER, 'showSeasons')
+                                    oGuiElement.setThumbnail(sThumbnail)
+                                    oGuiElement.setDescription(sDescription)
+                                    oGuiElement.setMediaType('tvshow')
+                                    params.setParam('sUrl', URL_MAIN + link)
+                                    params.setParam('sName', title)
+                                    oGui.addFolder(oGuiElement, params, True, total)
+                                    if not sGui:
+                                        oGui.setView('tvshows')
+                        length=length-1
+
+
+
+
 def getMetaInfo(link, title):   # Setzen von Metadata in Suche:
+    oGui = cGui()
     oRequest = cRequestHandler(URL_MAIN + link, caching=False)
     oRequest.addHeaderEntry('X-Requested-With', 'XMLHttpRequest')
     oRequest.addHeaderEntry('Referer', 'https://s.to/serien')
@@ -396,3 +521,29 @@ def getMetaInfo(link, title):   # Setzen von Metadata in Suche:
 
     for sImg, sDescr in aResult[1]:
         return sImg, sDescr
+
+def getMetaInfoId(link, title):  # Setzen von Metadata in Suche:
+    oGui = cGui()
+    oRequest = cRequestHandler(URL_MAIN + link, caching=False)
+    oRequest.addHeaderEntry('X-Requested-With', 'XMLHttpRequest')
+    oRequest.addHeaderEntry('Referer', 'https://s.to/serien')
+    oRequest.addHeaderEntry('Origin', 'https://s.to')
+
+    # GET CONTENT OF HTML
+    sHtmlContent = oRequest.request()
+    if not sHtmlContent:
+        return
+
+    pattern = 'seriesCoverBox">.*?<img src="(http.\:.+?)"\ al.+?data-full-description="([^"]+)"'  # img , descr
+    oParser = cParser()
+    aResult = oParser.parse(sHtmlContent, pattern)
+    imdbPattern = '<a[^>]*data-imdb="(.*?)"[^>]*>'  # imdbId
+    isImdb, sImdb = oParser.parseSingleResult(sHtmlContent, imdbPattern)
+
+    if not aResult[0]:
+        oGui.showInfo()
+        return
+    for sImg, sDescr in aResult[1]:
+        if isImdb:
+            return sImg, sDescr, sImdb
+        return sImg, sDescr, "None"
