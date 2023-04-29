@@ -1,7 +1,12 @@
 # -*- coding: utf-8 -*-
 # Python 3
 # Always pay attention to the translations in the menu!
-
+# HTML LangzeitCache hinzugefügt
+    #showGenre:     48 Stunden
+    #showYears:     48 Stunden
+    #showEntries:    6 Stunden
+    #showEpisodes:   4 Stunden
+    
 from resources.lib.handler.ParameterHandler import ParameterHandler
 from resources.lib.handler.requestHandler import cRequestHandler
 from resources.lib.tools import logger, cParser, cUtil
@@ -9,29 +14,24 @@ from resources.lib.gui.guiElement import cGuiElement
 from resources.lib.config import cConfig
 from resources.lib.gui.gui import cGui
 
-SITE_IDENTIFIER = 'xcine_top'
-SITE_NAME = 'XCine Top'
+SITE_IDENTIFIER = 'xcine'
+SITE_NAME = 'xCine'
 SITE_ICON = 'xcinetop.png'
-#SITE_GLOBAL_SEARCH = False     # Global search function is thus deactivated!
-#URL_MAIN = 'https://xcine.top/'
-URL_MAIN = str(cConfig().getSetting('xcine-domain', 'https://xcine.click/'))
+
+#Global search function is thus deactivated!
+if cConfig().getSetting('global_search_' + SITE_IDENTIFIER) == 'false':
+    SITE_GLOBAL_SEARCH = False
+    logger.info('-> [SitePlugin]: globalSearch for %s is deactivated.' % SITE_NAME)
+
+# Domain Abfrage
+DOMAIN = cConfig().getSetting('plugin_'+ SITE_IDENTIFIER +'.domain', 'xcine.click')
+URL_MAIN = 'https://' + DOMAIN + '/'
+#URL_MAIN = 'https://xcine.click/'
 URL_KINO = URL_MAIN + 'aktuelle-kinofilme-im-kino/'
 URL_MOVIES = URL_MAIN + 'kinofilme-online'
 URL_ANIMATION = URL_MAIN + 'animation/'
 URL_SERIES = URL_MAIN + 'serienstream-deutsch/'
-URL_SEARCH = URL_MAIN + 'index.php?do=search'
-
-
-def checkDomain():
-    oRequest = cRequestHandler(URL_MAIN, caching=False)
-    oRequest.request()
-    Domain = str(oRequest.getStatus())
-    if oRequest.getStatus() == '301':
-        url = oRequest.getRealUrl()
-        if not url.startswith('http'):
-            url = 'https://' + url
-        # Setzt aktuelle Domain in der settings.xml
-        cConfig().setSetting('xcine-domain', str(url))
+URL_SEARCH = URL_MAIN + 'index.php?do=search&subaction=search&story=%s'
 
 
 def load(): # Menu structure of the site plugin
@@ -56,7 +56,11 @@ def load(): # Menu structure of the site plugin
 def showGenre(entryUrl=False):
     params = ParameterHandler()
     if not entryUrl: entryUrl = params.getValue('sUrl')
-    sHtmlContent = cRequestHandler(entryUrl).request()
+    #sHtmlContent = cRequestHandler(entryUrl).request()
+    oRequest = cRequestHandler(entryUrl)
+    if cConfig().getSetting('global_search_' + SITE_IDENTIFIER) == 'true':
+        oRequest.cacheTime = 60 * 60 * 48 # 48 Stunden
+    sHtmlContent = oRequest.request()    
     pattern = 'Genre.*?</ul>'
     isMatch, sHtmlContainer = cParser.parseSingleResult(sHtmlContent, pattern)
     if isMatch:
@@ -76,7 +80,11 @@ def showGenre(entryUrl=False):
 def showYears(entryUrl=False):
     params = ParameterHandler()
     if not entryUrl: entryUrl = params.getValue('sUrl')
-    sHtmlContent = cRequestHandler(entryUrl).request()
+    #sHtmlContent = cRequestHandler(entryUrl).request()
+    oRequest = cRequestHandler(entryUrl)
+    if cConfig().getSetting('global_search_' + SITE_IDENTIFIER) == 'true':
+        oRequest.cacheTime = 60 * 60 * 48 # 48 Stunden
+    sHtmlContent = oRequest.request() 
     pattern = 'Release.*?</ul>'
     isMatch, sHtmlContainer = cParser.parseSingleResult(sHtmlContent, pattern)
     if isMatch:
@@ -96,26 +104,13 @@ def showYears(entryUrl=False):
 def showEntries(entryUrl=False, sGui=False, sSearchText=False):
     oGui = sGui if sGui else cGui()
     params = ParameterHandler()
-    # >>>> Domain Check <<<<<
-    oRequest = cRequestHandler(URL_MAIN, ignoreErrors=True)
-    oRequest.request()
-    Domain = str(oRequest.getStatus())
-    if not Domain == '200':
-        checkDomain()
-    # >>>> Ende Domain Check <<<<<    
     isTvshow = False
     if not entryUrl: entryUrl = params.getValue('sUrl')
     oRequest = cRequestHandler(entryUrl, ignoreErrors=(sGui is not False))
+    if cConfig().getSetting('global_search_' + SITE_IDENTIFIER) == 'true':
+        oRequest.cacheTime = 60 * 60 * 6  # 6 Stunden
     iPage = int(params.getValue('page'))
     oRequest = cRequestHandler(entryUrl + 'page/' + str(iPage) if iPage > 0 else entryUrl, ignoreErrors=(sGui is not False))
-    if sSearchText:
-        oRequest.addParameters('do', 'search')
-        oRequest.addParameters('subaction', 'search')
-        oRequest.addParameters('search_start', '0')
-        oRequest.addParameters('full_search', '1')
-        oRequest.addParameters('result_from', '1')
-        oRequest.addParameters('story', sSearchText)
-        oRequest.addParameters('titleonly', '3')
     sHtmlContent = oRequest.request()
     pattern = 'item__link.*?href="([^"]+).*?<img src="([^"]+).*?movie-item__label">([^<]+).*?movie-item__title ws-nowrap">([^<]+)'
     isMatch, aResult = cParser.parse(sHtmlContent, pattern)
@@ -128,6 +123,17 @@ def showEntries(entryUrl=False, sGui=False, sSearchText=False):
     for sUrl, sThumbnail, sQuality, sName in aResult:
         if sSearchText and not cParser.search(sSearchText, sName):
             continue
+        # Abfrage der voreingestellten Sprache
+        sLanguage = cConfig().getSetting('prefLanguage')
+        if (sLanguage == '1' and 'English*' in sName):   # Deutsch
+            continue
+        if (sLanguage == '2' and not 'English*' in sName):   # English
+            continue
+        elif sLanguage == '3':    # Japanisch
+            cGui().showLanguage()
+            continue
+        if '- Stream' in sName:
+            continue
         if sThumbnail[0] == '/':
             sThumbnail = sThumbnail[1:]
         isTvshow, aResult = cParser.parse(sName, '\s+-\s+Staffel\s+\d+')
@@ -138,9 +144,7 @@ def showEntries(entryUrl=False, sGui=False, sSearchText=False):
         params.setParam('entryUrl', sUrl)
         params.setParam('sName', sName)
         params.setParam('sThumbnail', sThumbnail)
-
         oGui.addFolder(oGuiElement, params, isTvshow, total)
-        
 
     if not sGui and not sSearchText:
         sPageNr = int(params.getValue('page'))
@@ -160,7 +164,11 @@ def showEpisodes():
     entryUrl = params.getValue('entryUrl')
     entryUrl = entryUrl + '/watching.html'
     sThumbnail = params.getValue('sThumbnail')
-    sHtmlContent = cRequestHandler(entryUrl).request()
+    #sHtmlContent = cRequestHandler(entryUrl).request()
+    oRequest = cRequestHandler(entryUrl)
+    if cConfig().getSetting('global_search_' + SITE_IDENTIFIER) == 'true':
+        oRequest.cacheTime = 60 * 60 * 6  # 6 Stunden
+    sHtmlContent = oRequest.request()
     isMatch, aResult = cParser.parse(sHtmlContent, '"><a href="#">([^<]+)')
     if not isMatch:
         cGui().showInfo()
@@ -193,6 +201,8 @@ def showHosters():
     isMatch, aResult = cParser().parse(sHtmlContent, 'link="([^"]+)')
     if isMatch:
         for sUrl in aResult:
+            sName = cParser.urlparse(sUrl)
+            if cConfig().isBlockedHoster(sName)[0]: continue # Hoster aus settings.xml oder deaktivierten Resolver ausschließen
             if 'youtube' in sUrl:
                 continue
             elif 'vod' in sUrl:
@@ -218,4 +228,4 @@ def showSearch():
 
 
 def _search(oGui, sSearchText):
-    showEntries(URL_SEARCH, oGui, sSearchText)
+    showEntries(URL_SEARCH % cParser.quotePlus(sSearchText), oGui, sSearchText)

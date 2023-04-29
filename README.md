@@ -16,8 +16,8 @@ Diese Version läuft ausschließlich unter Python 3, also ab Kodi Version 19 und
 
 Wir suchen derzeit noch Entwickler die das Projekt unterstützen möchten:
 
-Jeder der mithelfen kann und möchte, wird gebeten seine fertigen Fixes einzureichen.
-Wird ein Fix zu einer Seite eingereicht oder ein neuer Scraper zu einer Seite, so werden diese weiterhin eingepflegt.
+Jeder der mithelfen kann und möchte, wird gebeten seine fertigen Fixes oder Scraper einzureichen.
+
 Fixes zu Seiten bzw. neue Seiten am besten als PullRequest einreichen (oder auf Gitter).
 
 ***
@@ -39,4 +39,4 @@ Für alles weitere findet Ihr auch Informationen auf unserer Webseite die ihr au
 
 Oder nutzt unseren Chat wenn Ihr irgendwelche anderen Fragen um xStream beantwortet haben möchtet.
 
-[![Gitter](https://badges.gitter.im/streamxstream/community.svg)](https://gitter.im/streamxstream/community?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge)
+### | [Matrix Chat](https://matrix.to/#/#streamxstream_xTeam:gitter.im)

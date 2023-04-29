@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
 # Python 3
 # Always pay attention to the translations in the menu!
-
+# HTML LangzeitCache hinzugefügt
+    #showGenre:    48 Stunden
+    #showEntries:   6 Stunden
 # 2022-08-26 Heptamer - Regex Fix Zeile 117
 # 2022-10-05 Heptamer - Fix für Filme mit Direktlink Zeile  Zeile 128-136
 # 2023-01-17 Heptamer - 
-
 
 from resources.lib.handler.ParameterHandler import ParameterHandler
 from resources.lib.handler.requestHandler import cRequestHandler
@@ -14,16 +15,21 @@ from resources.lib.gui.guiElement import cGuiElement
 from resources.lib.config import cConfig
 from resources.lib.gui.gui import cGui
 
-
-
 SITE_IDENTIFIER = 'flimmerstube'
 SITE_NAME = 'Flimmerstube'
 SITE_ICON = 'flimmerstube.png'
-#SITE_GLOBAL_SEARCH = False     # Global search function is thus deactivated!
-URL_MAIN = 'http://flimmerstube.com'
+
+#Global search function is thus deactivated!
+if cConfig().getSetting('global_search_' + SITE_IDENTIFIER) == 'false':
+    SITE_GLOBAL_SEARCH = False
+    logger.info('-> [SitePlugin]: globalSearch for %s is deactivated.' % SITE_NAME)
+
+# Domain Abfrage
+DOMAIN = cConfig().getSetting('plugin_'+ SITE_IDENTIFIER +'.domain', 'flimmerstube.com')
+URL_MAIN = 'http://' + DOMAIN
+#URL_MAIN = 'http://flimmerstube.com'
 URL_MOVIES = URL_MAIN + '/video/vic/alle_filme'
 URL_SEARCH = URL_MAIN + '/video/shv'
-
 
 
 def load(): # Menu structure of the site plugin
@@ -55,7 +61,11 @@ def load(): # Menu structure of the site plugin
 def showGenre():
     params = ParameterHandler()
     entryUrl = params.getValue('sUrl')
-    sHtmlContent = cRequestHandler(entryUrl).request()
+    #sHtmlContent = cRequestHandler(entryUrl).request()
+    oRequest = cRequestHandler(entryUrl)
+    if cConfig().getSetting('global_search_' + SITE_IDENTIFIER) == 'true':
+        oRequest.cacheTime = 60 * 60 * 48  # 48 Stunden
+    sHtmlContent = oRequest.request()
     pattern = '<a[^>]class=[^>]catName[^>][^>]href="([^"]+)"[^>]>([^"]+)</a>'
     isMatch, aResult = cParser.parse(sHtmlContent, pattern)
     if not isMatch:
@@ -73,6 +83,8 @@ def showEntries(entryUrl=False, sGui=False, sSearchText=False):
     params = ParameterHandler()
     if not entryUrl: entryUrl = params.getValue('sUrl')
     oRequest = cRequestHandler(entryUrl, ignoreErrors=(sGui is not False))
+    if cConfig().getSetting('global_search_' + SITE_IDENTIFIER) == 'true':
+        oRequest.cacheTime = 60 * 60 * 6  # 6 Stunden
     if sSearchText:
         oRequest.addHeaderEntry('Referer', entryUrl)
         oRequest.addHeaderEntry('Upgrade-Insecure-Requests', '1')
@@ -82,16 +94,18 @@ def showEntries(entryUrl=False, sGui=False, sSearchText=False):
         else:
             oRequest.addParameters('c', '')
     sHtmlContent = oRequest.request()
-    pattern = 've-screen.*?title="([^"]+).*?url[^>]([^")]+).*?href="([^">]+)'
-    #pattern = 'vep-title.*?">([^"]+)</h1.*?src=\\\'([^\\]+).*?img src="([^"]+)'
+    pattern = 've-screen..title="([^(]+).(....).*?url[^>]([^")]+).*?href="([^">]+)' #inklusive sYear
     isMatch, aResult = cParser.parse(sHtmlContent, pattern)
-    
+    pattern = 'class="ve-screen..title="\(.*?D\)([^(]+).(....).*?url[^>]([^")]+).*?href="([^">]+)' #weiterer Pattern für Einträge beginnend mit (OmU...)
+    isMatch, aResult2 = cParser.parse(sHtmlContent, pattern)
+
     if not isMatch:
         if not sGui: oGui.showInfo()
         return
 
+    aResult = aResult + aResult2
     total = len(aResult)
-    for sName, sThumbnail, sUrl in aResult:
+    for sName, sYear, sThumbnail, sUrl in aResult:
         sName = sName.replace('(HD)', '')
         if sSearchText and not cParser().search(sSearchText, sName):
             continue
@@ -100,6 +114,7 @@ def showEntries(entryUrl=False, sGui=False, sSearchText=False):
         oGuiElement = cGuiElement(sName, SITE_IDENTIFIER, 'showHosters')
         oGuiElement.setThumbnail(sThumbnail)
         oGuiElement.setMediaType('movie')
+        oGuiElement.setYear(sYear)
         params.setParam('entryUrl', URL_MAIN + sUrl)
         oGui.addFolder(oGuiElement, params, False, total)
     if not sGui:

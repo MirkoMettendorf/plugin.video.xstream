@@ -2,14 +2,13 @@
 # Python 3
 
 import xbmc
-import xbmcaddon
 import xbmcgui
-import os
-import string
-import sys
+import xbmcaddon
 import hashlib
 import re
 import platform
+import os
+import sys
 
 from resources.lib.handler.ParameterHandler import ParameterHandler
 from resources.lib import common
@@ -17,11 +16,13 @@ from resources.lib import pyaes
 from resources.lib.config import cConfig
 from xbmcaddon import Addon
 from xbmcgui import Dialog
+from xbmcvfs import translatePath
 from urllib.parse import quote, unquote, quote_plus, unquote_plus, urlparse
 from html.entities import name2codepoint
 
 
-def platform(): # Aufgeführte Plattformen zum Anzeigen der Systemplattform
+# Aufgeführte Plattformen zum Anzeigen der Systemplattform
+def platform():
     if xbmc.getCondVisibility('system.platform.android'):
         return 'Android'
     elif xbmc.getCondVisibility('system.platform.linux'):
@@ -48,25 +49,99 @@ def platform(): # Aufgeführte Plattformen zum Anzeigen der Systemplattform
         return "LibreElec"
     elif xbmc.getCondVisibility('System.HasAddon(service.osmc.settings)'):
         return "OSMC"        
-        
 
-def pluginInfo(): # Plugin Support Informationen
-    BUILD = (xbmc.getInfoLabel('System.BuildVersion')[:4])
-    BUILDCODE = xbmc.getInfoLabel('System.BuildVersionCode')
-    SYS_FORM = cConfig().getLocalizedString(30266) 
-    PLUGIN_NAME = Addon().getAddonInfo('name')
-    PLUGIN_ID = Addon().getAddonInfo('id')
-    PLUGIN_VERSION = Addon().getAddonInfo('version')
-    PLUGIN_REPO_NAME = Addon('repository.xstream').getAddonInfo('name')
-    PLUGIN_REPO_ID = Addon('repository.xstream').getAddonInfo('id')
-    PLUGIN_REPO_VERSION = Addon('repository.xstream').getAddonInfo('version')
-    RESOLVER_NAME = Addon('script.module.resolveurl').getAddonInfo('name')
-    RESOLVER_ID = Addon('script.module.resolveurl').getAddonInfo('id')
-    RESOLVER_VERSION = Addon('script.module.resolveurl').getAddonInfo('version')
 
-    Dialog().ok(cConfig().getLocalizedString(30265), 'Kodi Version:' + '                ' + BUILD + ' (Code Version: ' + BUILDCODE + ') '+ '\n' + SYS_FORM + '        {0}'.format (platform().title()) + '\n' + PLUGIN_NAME + ' Version:          ' +  PLUGIN_ID  + ' - ' + PLUGIN_VERSION + '\n' + RESOLVER_NAME + ' Version:    ' +  RESOLVER_ID  + ' - ' + RESOLVER_VERSION + '\n' + PLUGIN_REPO_NAME + ':     ' +  PLUGIN_REPO_ID  + ' - ' + PLUGIN_REPO_VERSION + '\n')
+class cPluginInfo:
 
- 
+    def __init__(self):
+        self.addon = common.addon
+        self.rootFolder = common.addonPath
+        self.settingsFile = os.path.join(self.rootFolder, 'resources', 'settings.xml')
+        self.profilePath = common.profilePath
+        self.pluginDBFile = os.path.join(self.profilePath, 'pluginDB')
+        self.defaultFolder = os.path.join(self.rootFolder, 'sites')
+
+
+    def __getFileNamesFromFolder(self, sFolder):  # Hole Namen vom Dateiname.py
+        aNameList = []
+        items = os.listdir(sFolder)
+        for sItemName in items:
+            if sItemName.endswith('.py'):
+                sItemName = os.path.basename(sItemName[:-3])
+                aNameList.append(sItemName)
+        return aNameList
+
+
+    def __getPluginData(self, fileName, defaultFolder): # Hole Plugin Daten aus dem Siteplugin
+        pluginData = {}
+        if not defaultFolder in sys.path: sys.path.append(defaultFolder)
+        try:
+            plugin = __import__(fileName, globals(), locals())
+            pluginData['name'] = plugin.SITE_NAME
+        except Exception as e:
+            return False
+        try:
+            pluginData['identifier'] = plugin.SITE_IDENTIFIER
+        except Exception:
+            pass
+        try:
+            pluginData['domain'] = plugin.DOMAIN
+        except Exception:
+            pass
+        try:
+            pluginData['globalsearch'] = plugin.SITE_GLOBAL_SEARCH
+        except Exception:
+            pluginData['globalsearch'] = True
+            pass
+        return pluginData
+
+
+# Plugin Support Informationen
+    def pluginInfo(self):
+        BUILD = (xbmc.getInfoLabel('System.BuildVersion')[:4])
+        BUILDCODE = xbmc.getInfoLabel('System.BuildVersionCode')
+        SYS_FORM = cConfig().getLocalizedString(30266)
+        PLUGIN_NAME = Addon().getAddonInfo('name')
+        PLUGIN_ID = Addon().getAddonInfo('id')
+        PLUGIN_VERSION = Addon().getAddonInfo('version')
+        PLUGIN_REPO_NAME = Addon('repository.xstream').getAddonInfo('name')
+        PLUGIN_REPO_ID = Addon('repository.xstream').getAddonInfo('id')
+        PLUGIN_REPO_VERSION = Addon('repository.xstream').getAddonInfo('version')
+        RESOLVER_NAME = Addon('script.module.resolveurl').getAddonInfo('name')
+        RESOLVER_ID = Addon('script.module.resolveurl').getAddonInfo('id')
+        RESOLVER_VERSION = Addon('script.module.resolveurl').getAddonInfo('version')
+        PLATFORM = '   {0}'.format(platform().title())
+
+        # Support Informationen anzeigen
+        Dialog().textviewer(cConfig().getLocalizedString(30265),
+                            '[B]Geräte - Informationen:[/B]\n'
+                            + 'Kodi Version:  ' + BUILD + ' (Code Version: ' + BUILDCODE + ') ' + '\n'
+                            + SYS_FORM + PLATFORM + '\n'
+                            + '\n'
+                            + '[B]Plugin - Informationen:[/B]\n'
+                            + PLUGIN_NAME + ' Version:  ' + PLUGIN_ID + ' - ' + PLUGIN_VERSION + '\n'
+                            + RESOLVER_NAME + ' Version:  ' + RESOLVER_ID + ' - ' + RESOLVER_VERSION + '\n'
+                            + PLUGIN_REPO_NAME + ':  ' + PLUGIN_REPO_ID + ' - ' + PLUGIN_REPO_VERSION + '\n'
+                            )
+
+
+# zeigt nach Update den Changelog als Popup an
+def changelog():
+    CHANGELOG_PATH = translatePath(os.path.join('special://home/addons/plugin.video.xstream/', 'changelog.txt'))
+    version = xbmcaddon.Addon().getAddonInfo('version')
+    if xbmcaddon.Addon().getSetting('changelog_version') == version or not os.path.isfile(CHANGELOG_PATH):
+        return
+    xbmcaddon.Addon().setSetting('changelog_version', version)
+    heading = cConfig().getLocalizedString(30275)
+    with open(CHANGELOG_PATH, mode="r", encoding="utf-8") as f:
+        cl_lines = f.readlines()
+    announce = ''
+    for line in cl_lines:
+        announce += line
+    textBox(heading, announce)
+
+
+# Erstellt eine Textbox
 def textBox(heading, announce):
     class TextBox():
 
@@ -189,6 +264,7 @@ class cParser:
         return b
 
 
+# xStream interner Log
 class logger:
     @staticmethod
     def info(sInfo):
@@ -197,6 +273,10 @@ class logger:
     @staticmethod
     def debug(sInfo):
         logger.__writeLog(sInfo, cLogLevel=xbmc.LOGDEBUG)
+
+    @staticmethod
+    def warning(sInfo):
+        logger.__writeLog(sInfo, cLogLevel=xbmc.LOGWARNING)
 
     @staticmethod
     def error(sInfo):
@@ -212,9 +292,9 @@ class logger:
         try:
             if params.exist('site'):
                 site = params.getValue('site')
-                sLog = "\t[%s] -> %s: %s" % (common.addonName, site, sLog)
+                sLog = "[%s] -> [%s]: %s" % (common.addonName, site, sLog)
             else:
-                sLog = "\t[%s] %s" % (common.addonName, sLog)
+                sLog = "[%s] %s" % (common.addonName, sLog)
             xbmc.log(sLog, cLogLevel)
         except Exception as e:
             xbmc.log('Logging Failure: %s' % e, cLogLevel)
@@ -228,7 +308,7 @@ class cUtil:
         return p.sub(sReplace, sValue)
 
     @staticmethod
-    def unescape(text):
+    def unescape(text): #Todo hier werden Fehler angezeigt
         def fixup(m):
             text = m.group(0)
             if not text.endswith(';'): text += ';'

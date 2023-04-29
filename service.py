@@ -1,27 +1,34 @@
 # -*- coding: utf-8 -*-
 # Python 3
 
-import sys
 import os
 import json
 import re
 import xbmc
 import xbmcaddon
 import xbmcgui
+import time
 
 from xbmcaddon import Addon
-from xbmc import LOGDEBUG, LOGERROR
 from resources.lib.config import cConfig
 from resources.lib import tools
-
-AddonName = xbmcaddon.Addon().getAddonInfo('name')
-# xStream = xbmcaddon.Addon().getAddonInfo('id')
-
+from xbmc import LOGINFO as LOGNOTICE, LOGERROR, LOGWARNING, LOGDEBUG, log
+from resources.lib.handler.requestHandler import cRequestHandler
+from resources.lib.handler.pluginHandler import cPluginHandler
+from resources.lib import updateManager
 from xbmcvfs import translatePath
+
+LOGMESSAGE = cConfig().getLocalizedString(30166)
+
+# xStream = xbmcaddon.Addon().getAddonInfo('id')
+AddonName = xbmcaddon.Addon().getAddonInfo('name')
+
 # Pfad der update.sha
 NIGHTLY_UPDATE = os.path.join(translatePath(Addon().getAddonInfo('profile')), "update_sha")
+
 # xStream Installationspfad
-ADDON_PATH = translatePath(os.path.join('special://home/addons/', '%s'))    
+ADDON_PATH = translatePath(os.path.join('special://home/addons/', '%s'))
+
 
 # Update Info beim Kodi Start
 def infoDialog(message, heading=AddonName, icon='', time=5000, sound=False):
@@ -30,6 +37,7 @@ def infoDialog(message, heading=AddonName, icon='', time=5000, sound=False):
     elif icon == 'WARNING': icon = xbmcgui.NOTIFICATION_WARNING
     elif icon == 'ERROR': icon = xbmcgui.NOTIFICATION_ERROR
     xbmcgui.Dialog().notification(heading, message, icon, time, sound=sound)
+
 
 # Aktiviere xStream Addon
 def enableAddon(ADDONID):
@@ -49,17 +57,18 @@ def enableAddon(ADDONID):
             except:
                 pass
 
+
 # Überprüfe Abhängigkeiten
 def checkDependence(ADDONID):
     isdebug = True
-    if isdebug: xbmc.log(__name__ + ' - %s - checkDependence ' % ADDONID, xbmc.LOGDEBUG)
+    if isdebug:
+        log(__name__ + ' - %s - checkDependence ' % ADDONID, LOGDEBUG)
     try:
         addon_xml = os.path.join(ADDON_PATH % ADDONID, 'addon.xml')
         with open(addon_xml, 'rb') as f:
             xml = f.read()
         pattern = '(import.*?addon[^/]+)'
         allDependence = re.findall(pattern, str(xml))
-        #if isdebug: log_utils.log(__name__ + '%s - allDependence ' % str(allDependence), log_utils.LOGDEBUG)
         for i in allDependence:
             try:
                 if 'optional' in i or 'xbmc.python' in i: continue
@@ -74,11 +83,11 @@ def checkDependence(ADDONID):
             except:
                 pass
     except Exception as e:
-        xbmc.log(__name__ + '  %s - Exception ' % e, LOGERROR)
+        log(__name__ + ' %s - Exception ' % e, LOGERROR)
+
 
 # Starte xStream Update wenn auf Github verfügbar
 if os.path.isfile(NIGHTLY_UPDATE) == False or Addon().getSetting('githubUpdateXstream') == 'true'  or Addon().getSetting('enforceUpdate') == 'true':
-    from resources.lib import updateManager
     status1 = updateManager.xStreamUpdate(True)
     if Addon().getSetting('update.notification') == 'full': # Benachrichtung xStream vollständig
         infoDialog(cConfig().getLocalizedString(30112), sound=False, icon='INFO', time=10000)   # Suche Updates
@@ -90,9 +99,10 @@ if os.path.isfile(NIGHTLY_UPDATE) == False or Addon().getSetting('githubUpdateXs
         if status1 == True: infoDialog(cConfig().getLocalizedString(30113), sound=False, icon='INFO', time=6000)
         if status1 == False: infoDialog(cConfig().getLocalizedString(30114), sound=True, icon='ERROR')
         if xbmcaddon.Addon().getSetting('enforceUpdate') == 'true': xbmcaddon.Addon().setSetting('enforceUpdate', 'false')
+
+
 # Starte Resolver Update wenn auf Github verfügbar    
-if os.path.isfile(NIGHTLY_UPDATE) == False or Addon().getSetting('githubUpdateResolver') == 'true'  or Addon().getSetting('enforceUpdate') == 'true': 
-    from resources.lib import updateManager
+if os.path.isfile(NIGHTLY_UPDATE) == False or Addon().getSetting('githubUpdateResolver') == 'true'  or Addon().getSetting('enforceUpdate') == 'true':
     status2 = updateManager.resolverUpdate(True)
     if Addon().getSetting('update.notification') == 'full': # Benachrichtung Resolver vollständig
         infoDialog(cConfig().getLocalizedString(30112), sound=False, icon='INFO', time=10000)   # Suche Updates
@@ -105,30 +115,33 @@ if os.path.isfile(NIGHTLY_UPDATE) == False or Addon().getSetting('githubUpdateRe
         if status2 == False: infoDialog(cConfig().getLocalizedString(30117), sound=True, icon='ERROR')
         if xbmcaddon.Addon().getSetting('enforceUpdate') == 'true': xbmcaddon.Addon().setSetting('enforceUpdate', 'false')
 
-# "setting.xml" wenn notwendig Indexseiten aktualisieren
+
+# Startet Überprüfung der Abhängigkeiten
+checkDependence('plugin.video.xstream')
+
+
+# Startet Domain Überprüfung und schreibt diese in die settings.xml
+cPluginHandler().checkDomain()
+
+
+# Wenn neue settings vorhanden oder geändert in addon_data dann starte Pluginhandler und aktualisiere die PluginDB um Daten von checkDomain mit aufzunehmen
 try:
     if xbmcaddon.Addon().getSetting('newSetting') == 'true':
-        from resources.lib.handler.pluginHandler import cPluginHandler
         cPluginHandler().getAvailablePlugins()
 except Exception:
     pass
 
-checkDependence('plugin.video.xstream')
 
-# zeigt nach Update den Changelog als Popup an
-def changelog():
-    CHANGELOG_PATH = translatePath(os.path.join('special://home/addons/plugin.video.xstream/', 'changelog.txt'))
-    version = xbmcaddon.Addon().getAddonInfo('version')
-    if xbmcaddon.Addon().getSetting('changelog_version') == version or not os.path.isfile(CHANGELOG_PATH):
-        return
-    xbmcaddon.Addon().setSetting('changelog_version', version)
-    heading = cConfig().getLocalizedString(30275)
-    with open(CHANGELOG_PATH, mode="r", encoding="utf-8") as f:
-        cl_lines = f.readlines()
-    announce = ''
-    for line in cl_lines:
-        announce += line
-    tools.textBox(heading, announce)
 # Changelog Popup in den "settings.xml" ein bzw. aus schaltbar
 if xbmcaddon.Addon().getSetting('popup.update.notification') == 'true': 
-    changelog()
+    tools.changelog()
+
+
+# Html Cache beim KodiStart nach (X) Tage löschen
+deltaDay = int(cConfig().getSetting('cacheDeltaDay', 2))
+deltaTime = 60*60*24*deltaDay # Tage 
+currentTime = int(time.time())
+# alle x Tage
+if currentTime >= int(cConfig().getSetting('lastdelhtml', 0)) + deltaTime:
+    cRequestHandler('').clearCache() # Cache löschen
+    cConfig().setSetting('lastdelhtml', str(currentTime))

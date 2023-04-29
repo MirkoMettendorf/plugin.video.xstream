@@ -26,6 +26,7 @@ class cTMDB:
         name = re.sub(' +', ' ', name)
         if year:
             term = quote_plus(name) + '&year=' + year
+            name = re.sub(year, ' ', name) #Wenn das Jahr im Namen auftaucht dann das Jahr löschen
         else:
             term = quote_plus(name)
         meta = self._call('search/movie', 'query=' + term + '&page=' + str(page))

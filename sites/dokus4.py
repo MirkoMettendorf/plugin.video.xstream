@@ -2,6 +2,8 @@
 # Python 3
 # Always pay attention to the translations in the menu!
 
+import xbmc
+
 from resources.lib.handler.ParameterHandler import ParameterHandler
 from resources.lib.handler.requestHandler import cRequestHandler
 from resources.lib.tools import logger, cParser
@@ -13,7 +15,13 @@ from resources.lib.gui.gui import cGui
 SITE_IDENTIFIER = 'dokus4'
 SITE_NAME = 'Dokus4'
 SITE_ICON = 'dokus4.png'
-SITE_GLOBAL_SEARCH = False
+
+#Global search function is thus deactivated!
+if cConfig().getSetting('global_search_' + SITE_IDENTIFIER) == 'false':
+    SITE_GLOBAL_SEARCH = False
+    logger.info('-> [SitePlugin]: globalSearch for %s is deactivated.' % SITE_NAME)
+
+# Domain Abfrage
 URL_MAIN = 'http://www.dokus4.me/'
 URL_SEARCH = URL_MAIN + '?s=%s'
 
@@ -64,6 +72,8 @@ def showEntries(entryUrl=False, sGui=False, sSearchText=False):
         oGuiElement.setDescription(sDesc)
         params.setParam('entryUrl', sUrl)
         oGui.addFolder(oGuiElement, params, False, total)
+    if not xbmc.getCondVisibility('System.HasAddon(%s)' % 'plugin.video.youtube'):
+        xbmc.executebuiltin('InstallAddon(%s)' % 'plugin.video.youtube')    
     if not sGui:
         isMatchNextPage, sNextUrl = cParser.parseSingleResult(sHtmlContent, 'rel="next" href="([^"]+)')
         if isMatchNextPage:
@@ -88,9 +98,6 @@ def showHosters():
 
 
 def getHosterUrl(sUrl=False):
-    import xbmc
-    if not xbmc.getCondVisibility('System.HasAddon(%s)' % 'plugin.video.youtube'):
-        xbmc.executebuiltin('InstallAddon(%s)' % 'plugin.video.youtube')
     return [{'streamUrl': sUrl, 'resolved': False}]
 
 
